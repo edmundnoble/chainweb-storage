@@ -48,7 +48,7 @@ class TablePrefixTransform : public SliceTransform {
   ~TablePrefixTransform() { }
 
   static const char* kClassName() { return "kadena.rocksdb.TablePrefix"; }
-  static const char* kNickName() { return "table"; }
+  // static const char* kNickName() { return "table"; }
   const char* Name() const override { return kClassName(); }
   Slice Transform(const Slice& src) const override {
     size_t prefix_end;

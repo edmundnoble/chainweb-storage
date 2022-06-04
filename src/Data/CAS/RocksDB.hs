@@ -221,7 +221,7 @@ foreign import ccall unsafe "cpp\\chainweb-rocksdb.h rocksdb_options_table_prefi
 -- at the provided directory path, a new database is created.
 --
 openRocksDb :: FilePath -> R.Options -> IO RocksDb
-openRocksDb path opts = withOpts opts $ \opts'@(R.Options' opts_ptr _ _) -> do
+openRocksDb path opts = withOpts opts $ \opts'@(R.Options' opts_ptr _) -> do
     GHC.setFileSystemEncoding GHC.utf8
     createDirectoryIfMissing True path
     -- required to use prefix seek
@@ -246,7 +246,7 @@ withOpts opts = bracket (R.mkOpts opts) R.freeOpts
 initializeRocksDb :: RocksDb -> IO ()
 initializeRocksDb db = R.put
     (_rocksDbHandle db)
-    R.defaultWriteOptions
+    mempty
     (_rocksDbNamespace db <> ".")
     ""
 
@@ -364,7 +364,7 @@ newTable db valCodec keyCodec namespace
 tableInsert :: RocksDbTable k v -> k -> v -> IO ()
 tableInsert db k v = R.put
     (_rocksDbTableDb db)
-    R.defaultWriteOptions
+    mempty
     (encKey db k)
     (encVal db v)
 {-# INLINE tableInsert #-}
@@ -375,7 +375,7 @@ tableInsert db k v = R.put
 --
 tableLookup :: RocksDbTable k v -> k -> IO (Maybe v)
 tableLookup db k = do
-    maybeBytes <- get (_rocksDbTableDb db) R.defaultReadOptions (encKey db k)
+    maybeBytes <- get (_rocksDbTableDb db) mempty (encKey db k)
     traverse (decVal db) maybeBytes
 {-# INLINE tableLookup #-}
 
@@ -389,7 +389,7 @@ tableLookupBatch
     -> V.Vector k
     -> IO (V.Vector (Maybe v))
 tableLookupBatch db ks = do
-    results <- multiGet (_rocksDbTableDb db) R.defaultReadOptions (V.map (encKey db) ks)
+    results <- multiGet (_rocksDbTableDb db) mempty (V.map (encKey db) ks)
     V.forM results $ \case
         Left e -> error $ "Data.CAS.RocksDB.tableLookupBatch: " <> e
         Right x -> traverse (decVal db) x
@@ -401,7 +401,7 @@ tableLookupBatch db ks = do
 tableDelete :: RocksDbTable k v -> k -> IO ()
 tableDelete db k = R.delete
     (_rocksDbTableDb db)
-    R.defaultWriteOptions
+    mempty
     (encKey db k)
 {-# INLINE tableDelete #-}
 
@@ -433,7 +433,7 @@ rocksDbUpdateDb (RocksDbInsert t _ _) = _rocksDbTableDb t
 --
 updateBatch :: HasCallStack => [RocksDbUpdate] -> IO ()
 updateBatch [] = return ()
-updateBatch batch = R.write rdb R.defaultWriteOptions $ checkMkOp <$> batch
+updateBatch batch = R.write rdb mempty $ checkMkOp <$> batch
   where
     rdb = rocksDbUpdateDb $ head batch
 
@@ -484,18 +484,18 @@ instance NoThunks (RocksDbTableIter k v) where
 -- 'RocksDbTableIter'.
 --
 withTableIter :: RocksDbTable k v -> (RocksDbTableIter k v -> IO a) -> IO a
-withTableIter db k = I.withReadOptions readOptions $ \opts_ptr ->
+withTableIter db k = R.withReadOptions readOptions $ \opts_ptr ->
     I.withIter (_rocksDbTableDb db) opts_ptr $ \iter -> do
         let tableIter = makeTableIter iter
         tableIterFirst tableIter
         k tableIter
   where
     readOptions = fold
-        [ I.setLowerBound (namespaceFirst $ _rocksDbTableNamespace db)
-        , I.setUpperBound (namespaceLast $ _rocksDbTableNamespace db)
+        [ R.setLowerBound (namespaceFirst $ _rocksDbTableNamespace db)
+        , R.setUpperBound (namespaceLast $ _rocksDbTableNamespace db)
         -- TODO: this setting tells rocksdb to use prefix seek *when it can*.
         -- the question remains: is it actually being used?
-        , I.setAutoPrefixMode True
+        , R.setAutoPrefixMode True
         ]
     makeTableIter =
         RocksDbTableIter
@@ -850,17 +850,6 @@ checkpointRocksDb RocksDb { _rocksDbHandle = R.DB dbPtr _ } logSizeFlushThreshol
             checked "creating checkpoint" $
                 rocksdb_checkpoint_create cp path' logSizeFlushThreshold
 
-foreign import ccall unsafe "cpp\\chainweb-rocksdb.h rocksdb_delete_range"
-    rocksdb_delete_range
-        :: C.RocksDBPtr
-        -> C.WriteOptionsPtr
-        -> CString {- min key -}
-        -> CSize {- min key length -}
-        -> CString {- max key length -}
-        -> CSize {- max key length -}
-        -> Ptr CString {- output: errptr -}
-        -> IO ()
-
 validateRangeOrdered :: HasCallStack => RocksDbTable k v -> (Maybe k, Maybe k) -> (B.ByteString, B.ByteString)
 validateRangeOrdered table (Just (encKey table -> l), Just (encKey table -> u))
     | l >= u =
@@ -877,28 +866,19 @@ deleteRangeRocksDb :: HasCallStack => RocksDbTable k v -> (Maybe k, Maybe k) -> 
 deleteRangeRocksDb table range = do
     let !range' = validateRangeOrdered table range
     let R.DB dbPtr _ = _rocksDbTableDb table
-    R.withCWriteOpts R.defaultWriteOptions $ \optsPtr ->
+    R.withWriteOptions mempty $ \optsPtr ->
         BU.unsafeUseAsCStringLen (fst range') $ \(minKeyPtr, minKeyLen) ->
         BU.unsafeUseAsCStringLen (snd range') $ \(maxKeyPtr, maxKeyLen) ->
         checked "Data.CAS.RocksDB.deleteRangeRocksDb" $
-            rocksdb_delete_range dbPtr optsPtr
+            C.rocksdb_delete_range dbPtr optsPtr
                 minKeyPtr (fromIntegral minKeyLen :: CSize)
                 maxKeyPtr (fromIntegral maxKeyLen :: CSize)
-
-foreign import ccall safe "rocksdb\\c.h rocksdb_compact_range"
-    rocksdb_compact_range
-        :: C.RocksDBPtr
-        -> CString {- min key -}
-        -> CSize {- min key length -}
-        -> CString {- max key -}
-        -> CSize {- max key length -}
-        -> IO ()
 
 compactRangeRocksDb :: HasCallStack => RocksDbTable k v -> (Maybe k, Maybe k) -> IO ()
 compactRangeRocksDb table range =
     BU.unsafeUseAsCStringLen (fst range') $ \(minKeyPtr, minKeyLen) ->
         BU.unsafeUseAsCStringLen (snd range') $ \(maxKeyPtr, maxKeyLen) ->
-        rocksdb_compact_range dbPtr
+        C.rocksdb_compact_range dbPtr
             minKeyPtr (fromIntegral minKeyLen :: CSize)
             maxKeyPtr (fromIntegral maxKeyLen :: CSize)
   where
@@ -908,7 +888,7 @@ compactRangeRocksDb table range =
 -- | Read a value by key.
 -- One less copy than the version in rocksdb-haskell by using unsafePackCStringFinalizer.
 get :: MonadIO m => R.DB -> R.ReadOptions -> ByteString -> m (Maybe ByteString)
-get (R.DB db_ptr _) opts key = liftIO $ R.withCReadOpts opts $ \opts_ptr ->
+get (R.DB db_ptr _) opts key = liftIO $ R.withReadOptions opts $ \opts_ptr ->
     BU.unsafeUseAsCStringLen key $ \(key_ptr, klen) ->
     alloca $ \vlen_ptr -> do
         val_ptr <- checked "Data.CAS.RocksDB.get" $
@@ -940,7 +920,7 @@ multiGet
     -> R.ReadOptions
     -> V.Vector ByteString
     -> m (V.Vector (Either String (Maybe ByteString)))
-multiGet (R.DB db_ptr _) opts keys = liftIO $ R.withCReadOpts opts $ \opts_ptr ->
+multiGet (R.DB db_ptr _) opts keys = liftIO $ R.withReadOptions opts $ \opts_ptr ->
     allocaArray len $ \keysArray ->
     allocaArray len $ \keySizesArray ->
     allocaArray len $ \valuesArray ->
