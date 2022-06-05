@@ -31,7 +31,7 @@ library
     hs-source-dirs: src
     cxx-sources: cpp/chainweb-rocksdb.cpp
     extra-libraries: stdc++
-    cxx-options: -std=c++17 -fno-rtti
+    cxx-options: -std=c++11 -fno-rtti
     default-language: Haskell2010
     ghc-options:
         -Wall
