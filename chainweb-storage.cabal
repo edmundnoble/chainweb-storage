@@ -31,7 +31,9 @@ library
     hs-source-dirs: src
     cxx-sources: cpp/chainweb-rocksdb.cpp
     extra-libraries: stdc++
-    cxx-options: -std=c++11 -fno-rtti
+    cxx-options:
+        -momit-leaf-frame-pointer -mtune=generic -march=x86-64 -O2 -std=c++11 -fPIC -fno-rtti -faligned-new=1 -fno-builtin-memcmp -fno-omit-frame-pointer -fasynchronous-unwind-tables
+
     default-language: Haskell2010
     ghc-options:
         -Wall

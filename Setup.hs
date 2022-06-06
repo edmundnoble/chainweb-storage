@@ -74,6 +74,8 @@ main = defaultMainWithHooks
                                 , "static_lib"
                                 ]
                             copyFile (rocksdb_srcdir </> staticLibFile "librocksdb") (staticLibFile "libCrocksdb")
+                            includeFiles <-
+                                withCurrentDirectory (rocksdb_srcdir </> "include") $ listDirectoryRecursive "rocksdb"
                             pure
                                 lbi
                                 { localPkgDescr =
@@ -82,6 +84,8 @@ main = defaultMainWithHooks
                                         emptyBuildInfo
                                         { extraLibs = extra_libs
                                         , includeDirs = [rocksdb_srcdir </> "include"]
+                                        , installIncludes = includeFiles
+                                        , extraBundledLibs = ["Crocksdb"]
                                         }
                                     , []) $
                                     localPkgDescr lbi
