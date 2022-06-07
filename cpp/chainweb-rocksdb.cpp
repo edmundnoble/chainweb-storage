@@ -79,6 +79,7 @@ class TablePrefixTransform : public SliceTransform {
   }
 
   bool SameResultWhenAppended(const Slice& prefix) const override {
+    (void)prefix;
     return false;
   }
 };
