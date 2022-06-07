@@ -81,6 +81,11 @@ library
         rocksdb
         rocksdb/include
 
+    install-includes:
+        rocksdb/c.h
+        rocksdb/db.h
+        rocksdb/slice_transform.h
+
     -- These options are extracted from CXXFLAGS the RocksDB Makefile
     cxx-options:
         -fno-rtti

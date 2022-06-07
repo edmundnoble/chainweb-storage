@@ -14,12 +14,6 @@ import Foreign
 import Foreign.C.Types
 import Foreign.C.String
 
-#ifdef mingw32_HOST_OS
-#include <rocksdb\c.h>
-#else
-#include <rocksdb/c.h>
-#endif
-
 data RocksDB
 data LCache
 data LIterator
@@ -49,15 +43,19 @@ type Val    = CString
 
 newtype CompressionOpt = CompressionOpt { compressionOpt :: CInt }
   deriving (Eq, Show)
-#{enum CompressionOpt, CompressionOpt
- , noCompression     = 0
- , snappyCompression = 1
- , zlibCompression   = 2
- , bz2Compression    = 3
- , lz4Compression    = 4
- , lz4hcCompression  = 5
- }
 
+noCompression :: CompressionOpt
+noCompression = CompressionOpt 0
+snappyCompression :: CompressionOpt
+snappyCompression = CompressionOpt 1
+zlibCompression :: CompressionOpt
+zlibCompression = CompressionOpt 2
+bz2Compression :: CompressionOpt
+bz2Compression = CompressionOpt 3
+lz4Compression :: CompressionOpt
+lz4Compression = CompressionOpt 4
+lz4hcCompression :: CompressionOpt
+lz4hcCompression = CompressionOpt 5
 
 foreign import ccall safe "rocksdb\\c.h rocksdb_open"
   c_rocksdb_open :: OptionsPtr -> DBName -> ErrPtr -> IO RocksDBPtr
@@ -208,7 +206,6 @@ foreign import ccall safe "rocksdb\\c.h rocksdb_writebatch_iterate"
                                -> FunPtr (Ptr () -> Key -> CSize -> Val -> CSize) -- ^ put
                                -> FunPtr (Ptr () -> Key -> CSize)     -- ^ delete
                                -> IO ()
-
 
 --
 -- Options
